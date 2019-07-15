@@ -105,16 +105,14 @@ void new_work() {
 void worker_init( int count ) {
 
 	pool_init(&tpool, count);
-
-	pthread_mutex_lock(&(tpool.queue_mutex));
 	queue_init( &(tpool.queue), count );
+
 	for( int i = 0; i < count; i++ ) {
 		pthread_t thread_id; 
 		pthread_create(&thread_id, NULL, new_work, NULL);
 		tpool.workers[i] = thread_id;
 	}
-	//pthread_cond_signal(&queue_cond);
-	pthread_mutex_unlock(&(tpool.queue_mutex));
+
 }
 
 void worker_add_job( void(*task)(void *), void *p ) {
@@ -156,7 +154,7 @@ int main(int argc, char const *argv[])
 
 	worker_init( 4 );
 
-	for( int i = 1; i <= 50; i++ ) {
+	for( int i = 1; i <= 10; i++ ) {
 		worker_add_job( test, i );
 	}
 
