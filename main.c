@@ -26,6 +26,7 @@ typedef struct pool
 	pthread_t *workers;
 	task *task;
 	int max;
+	int join_all;
 } pool;
 
 pool tpool;
@@ -38,10 +39,12 @@ void pool_init( pool *p, int max ) {
 	p->workers = malloc(sizeof(pthread_t) * max);
 	p->stop = 0;
 	p->max = max;
+	p->join_all = 0;
 }
 
 void pool_free( pool *p ) {
 	free( p->workers );
+	p->max = 0;
 }
 
 void queue_init( queue *q, int max ) {
@@ -83,14 +86,14 @@ void new_worker() {
 	for(;;) {
 
 	    pthread_mutex_lock(&(tpool.queue_mutex));
-	    //pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
-	    //pthread_cond_signal(&(tpool.queue_cond));
-
 		if( tpool.stop ) {
-			//printf("breaked\n");
 			pthread_mutex_unlock(&(tpool.queue_mutex));
 			break;
 		}
+
+	    if( tpool.queue.len  == 0 ) {
+	    	pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
+	    }
 
 		if( tpool.queue.len > 0 && ! tpool.stop ) {
 			task *t = queue_pop_front( &(tpool.queue) );
@@ -117,29 +120,49 @@ void worker_init( int count ) {
 
 void worker_add_job( void(*task)(void *), void *p ) {
 	pthread_mutex_lock(&(tpool.queue_mutex));
-	//pthread_cond_signal(&(tpool.queue_cond));
-	tpool.task = malloc(sizeof(task));
-	task_add(tpool.task, task, p);
-	queue_add( &(tpool.queue), tpool.task );
+	if( tpool.stop == 0 ) {
+		tpool.task = malloc(sizeof(task));
+		task_add(tpool.task, task, p);
+		queue_add( &(tpool.queue), tpool.task );
+		for( int i = 0; i < tpool.max;i++ ) {
+			pthread_cond_signal(&(tpool.queue_cond));
+		}
+	}
 	pthread_mutex_unlock(&(tpool.queue_mutex));
 }
 
 void worker_stop() {
-	//if(tpool.stop == 0 ) {	
-		printf("in stop\n");
-		pthread_mutex_lock(&(tpool.queue_mutex));
-		//pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
-		tpool.stop = 1;
-		pthread_mutex_unlock(&(tpool.queue_mutex));
-		queue_free(&(tpool.queue));
-		pool_free(&tpool);
-	//}
+
+	pthread_mutex_lock(&(tpool.queue_mutex));
+	tpool.stop = 1;
+
+	if( tpool.queue.len == 0 ) {
+		for( int i = 0; i < tpool.max;i++ ) {
+			pthread_cond_signal(&(tpool.queue_cond));
+		}
+	}
+
+	if( ! tpool.join_all ) {
+		tpool.join_all = 1;
+		for( int i = 0; i < tpool.max;i++ ) {
+			pthread_join(tpool.workers[i], NULL);
+		}
+	}
+	queue_free(&(tpool.queue));
+	pool_free(&tpool);
+	pthread_mutex_unlock(&(tpool.queue_mutex));
 }
 
 void worker_join() {
-	for( int i = 0; i < tpool.max;i++ ) {
-		pthread_join(tpool.workers[i], NULL);
+
+	if( tpool.max > 0 && !tpool.join_all ) {
+		tpool.join_all = 1;
+		int max = tpool.max;
+		for( int i = 0; i < max; i++ ) {
+			pthread_join(tpool.workers[i], NULL);
+		}
 	}
+
 }
 
 void test( void *p ) {
@@ -155,7 +178,7 @@ int main(int argc, char const *argv[])
 {
 	signal(SIGINT, signal_handler);
 
-	worker_init( 4 );
+	worker_init( 2 );
 
 	for( int i = 1; i <= 10; i++ ) {
 		worker_add_job( test, i );
