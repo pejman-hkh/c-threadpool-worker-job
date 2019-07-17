@@ -78,25 +78,25 @@ void *task_add( task *t, void(*task)(void *), void *p ) {
 }
 
 
-void new_work() {
+void new_worker() {
 	pid_t tid = syscall(SYS_gettid);
 	for(;;) {
 
 	    pthread_mutex_lock(&(tpool.queue_mutex));
-	    //pthread_cond_wait(&queue_cond,&queue_mutex);
+	    //pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
 	    //pthread_cond_signal(&(tpool.queue_cond));
 
-		if( tpool.queue.len > 0 ) {
+		if( tpool.stop ) {
+			//printf("breaked\n");
+			pthread_mutex_unlock(&(tpool.queue_mutex));
+			break;
+		}
+
+		if( tpool.queue.len > 0 && ! tpool.stop ) {
 			task *t = queue_pop_front( &(tpool.queue) );
 			pthread_mutex_unlock(&(tpool.queue_mutex));
 			t->fn(t->param);
 			free(t);
-		}
-
-		if( tpool.stop && tpool.queue.len == 0 ) {
-			//printf("breaked\n");
-			pthread_mutex_unlock(&(tpool.queue_mutex));
-			break;
 		}
 	    pthread_mutex_unlock(&(tpool.queue_mutex));
 	}	
@@ -109,7 +109,7 @@ void worker_init( int count ) {
 
 	for( int i = 0; i < count; i++ ) {
 		pthread_t thread_id; 
-		pthread_create(&thread_id, NULL, new_work, NULL);
+		pthread_create(&thread_id, NULL, new_worker, NULL);
 		tpool.workers[i] = thread_id;
 	}
 
@@ -117,20 +117,23 @@ void worker_init( int count ) {
 
 void worker_add_job( void(*task)(void *), void *p ) {
 	pthread_mutex_lock(&(tpool.queue_mutex));
+	//pthread_cond_signal(&(tpool.queue_cond));
 	tpool.task = malloc(sizeof(task));
 	task_add(tpool.task, task, p);
 	queue_add( &(tpool.queue), tpool.task );
-	//pthread_cond_signal(&queue_cond);
 	pthread_mutex_unlock(&(tpool.queue_mutex));
 }
 
 void worker_stop() {
-	pthread_mutex_lock(&(tpool.queue_mutex));
-	//pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
-	tpool.stop = 1;
-	pthread_mutex_unlock(&(tpool.queue_mutex));
-	queue_free(&(tpool.queue));
-	pool_free(&tpool);
+	//if(tpool.stop == 0 ) {	
+		printf("in stop\n");
+		pthread_mutex_lock(&(tpool.queue_mutex));
+		//pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
+		tpool.stop = 1;
+		pthread_mutex_unlock(&(tpool.queue_mutex));
+		queue_free(&(tpool.queue));
+		pool_free(&tpool);
+	//}
 }
 
 void worker_join() {
