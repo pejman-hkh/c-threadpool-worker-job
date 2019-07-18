@@ -48,7 +48,7 @@ void pool_free( pool *p ) {
 }
 
 void queue_init( queue *q, int max ) {
-	q->key = malloc(sizeof(void*) * max);
+	q->key = malloc(sizeof(void*) * max * 5);
 	q->len = 0;
 }
 
@@ -59,7 +59,8 @@ void queue_add( queue *q, void *key ) {
 }
 
 void queue_free( queue *q ) {
-	for( int i = 0; i < q->len; i++ ) {
+	int len = q->len;
+	for( int i = 0; i < len; i++ ) {
 		free(q->key[i] );
 	}
 	free( q->key );
@@ -118,17 +119,33 @@ void worker_init( int count ) {
 
 }
 
+void worker_notify_all() {
+	for( int i = 0; i < tpool.max;i++ ) {
+		pthread_cond_signal(&(tpool.queue_cond));
+	}	
+}
+
 void worker_add_job( void(*task)(void *), void *p ) {
 	pthread_mutex_lock(&(tpool.queue_mutex));
 	if( tpool.stop == 0 ) {
 		tpool.task = malloc(sizeof(task));
 		task_add(tpool.task, task, p);
 		queue_add( &(tpool.queue), tpool.task );
-		for( int i = 0; i < tpool.max;i++ ) {
-			pthread_cond_signal(&(tpool.queue_cond));
-		}
+		pthread_cond_signal(&(tpool.queue_cond));
 	}
 	pthread_mutex_unlock(&(tpool.queue_mutex));
+}
+
+void worker_join_all() {
+	if( ! tpool.join_all ) {
+		tpool.join_all = 1;
+		int max = tpool.max;
+		for( int i = 0; i < max;i++ ) {
+			pthread_join(tpool.workers[i], NULL);
+		}
+		pool_free(&tpool);
+		exit(0);
+	}
 }
 
 void worker_stop() {
@@ -136,38 +153,24 @@ void worker_stop() {
 	pthread_mutex_lock(&(tpool.queue_mutex));
 	tpool.stop = 1;
 
-	if( tpool.queue.len == 0 ) {
-		for( int i = 0; i < tpool.max;i++ ) {
-			pthread_cond_signal(&(tpool.queue_cond));
-		}
-	}
-
-	if( ! tpool.join_all ) {
-		tpool.join_all = 1;
-		for( int i = 0; i < tpool.max;i++ ) {
-			pthread_join(tpool.workers[i], NULL);
-		}
-	}
+	worker_notify_all();
 	queue_free(&(tpool.queue));
-	pool_free(&tpool);
+	worker_join_all();
+
 	pthread_mutex_unlock(&(tpool.queue_mutex));
+	pthread_mutex_destroy( &(tpool.queue_mutex) );
+	pthread_cond_destroy( &(tpool.queue_cond) );
+
 }
 
 void worker_join() {
-
-	if( tpool.max > 0 && !tpool.join_all ) {
-		tpool.join_all = 1;
-		int max = tpool.max;
-		for( int i = 0; i < max; i++ ) {
-			pthread_join(tpool.workers[i], NULL);
-		}
-	}
-
+	worker_join_all();
 }
 
 void test( void *p ) {
 	printf("%d\n", p );
 	sleep(1);
+
 }
 
 void signal_handler() {
@@ -178,9 +181,9 @@ int main(int argc, char const *argv[])
 {
 	signal(SIGINT, signal_handler);
 
-	worker_init( 2 );
+	worker_init( 4 );
 
-	for( int i = 1; i <= 10; i++ ) {
+	for( int i = 1; i <= 20; i++ ) {
 		worker_add_job( test, i );
 	}
 
