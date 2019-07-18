@@ -47,12 +47,18 @@ void pool_free( pool *p ) {
 	p->max = 0;
 }
 
-void queue_init( queue *q, int max ) {
-	q->key = malloc(sizeof(void*) * max * 5);
+void queue_init( queue *q ) {
+	q->key = malloc(sizeof(void*));
 	q->len = 0;
 }
 
 void queue_add( queue *q, void *key ) {
+
+	void ** rkey = realloc(q->key, sizeof(void*) * (q->len+2) );
+	if(rkey) {
+		q->key = rkey;
+	}
+
 	q->key[q->len] = key;
 
 	q->len++;
@@ -109,7 +115,7 @@ void new_worker() {
 void worker_init( int count ) {
 
 	pool_init(&tpool, count);
-	queue_init( &(tpool.queue), count );
+	queue_init( &(tpool.queue) );
 
 	for( int i = 0; i < count; i++ ) {
 		pthread_t thread_id; 
@@ -181,7 +187,7 @@ int main(int argc, char const *argv[])
 {
 	signal(SIGINT, signal_handler);
 
-	worker_init( 4 );
+	worker_init( 5 );
 
 	for( int i = 1; i <= 20; i++ ) {
 		worker_add_job( test, i );
