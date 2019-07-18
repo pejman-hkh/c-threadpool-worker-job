@@ -67,15 +67,15 @@ void new_worker() {
 	pid_t tid = syscall(SYS_gettid);
 	for(;;) {
 
-	    pthread_mutex_lock(&(tpool.queue_mutex));
+		pthread_mutex_lock(&(tpool.queue_mutex));
 		if( tpool.stop ) {
 			pthread_mutex_unlock(&(tpool.queue_mutex));
 			break;
 		}
 
-	    if( tpool.queue.len  == 0 ) {
-	    	pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
-	    }
+		if( tpool.queue.len  == 0 ) {
+			pthread_cond_wait(&(tpool.queue_cond),&(tpool.queue_mutex));
+		}
 
 		if( tpool.queue.len > 0 && ! tpool.stop ) {
 			task *t = queue_pop_front( &(tpool.queue) );
@@ -83,7 +83,7 @@ void new_worker() {
 			t->fn(t->param);
 			free(t);
 		}
-	    pthread_mutex_unlock(&(tpool.queue_mutex));
+		pthread_mutex_unlock(&(tpool.queue_mutex));
 	}	
 }
 
